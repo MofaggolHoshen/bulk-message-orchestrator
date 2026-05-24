@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/docs/">
+    <File Path="docs/Implementation_Plan.md" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/BulkMessage.Orchestrator.Api/BulkMessage.Orchestrator.Api.csproj" />
   </Folder>

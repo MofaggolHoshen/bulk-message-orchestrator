@@ -1,3 +1,4 @@
+using BulkMessage.Orchestrator.Api.Auth;
 using BulkMessage.Orchestrator.Api.Data;
 using BulkMessage.Orchestrator.Api.Hubs;
 using BulkMessage.Orchestrator.Api.Jobs;
@@ -6,7 +7,10 @@ using BulkMessage.Orchestrator.Api.Services;
 using Hangfire;
 using Hangfire.MemoryStorage;
 using MassTransit;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,13 +63,34 @@ builder.Services.AddMassTransit(bus =>
     }
 });
 
+// Authentication — API key scheme (open in dev when ApiKey config is empty)
+builder.Services
+    .AddAuthentication(ApiKeyAuthenticationHandler.Scheme)
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.Scheme, _ => { });
+builder.Services.AddAuthorization();
+
+// Rate limiting — fixed window: 60 requests/minute on the create endpoint
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.AddFixedWindowLimiter("create-job", opts =>
+    {
+        opts.PermitLimit = 60;
+        opts.Window = TimeSpan.FromMinutes(1);
+        opts.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        opts.QueueLimit = 0;
+    });
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 builder.Services.AddHealthChecks().AddDbContextCheck<OrchestratorDbContext>();
 builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 
 builder.Services.AddSingleton<IBulkPublishProgressStore, InMemoryBulkPublishProgressStore>();
+builder.Services.AddSingleton<ICancellationRegistry, InMemoryCancellationRegistry>();
 builder.Services.AddScoped<IBulkPublishingEngine, BulkPublishingEngine>();
+builder.Services.AddScoped<ScheduledBulkPublishingJob>();
 
 var app = builder.Build();
 
@@ -75,7 +100,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapHealthChecks("/health");
-app.UseHangfireDashboard("/hangfire");
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+app.UseHangfireDashboard("/hangfire", new Hangfire.DashboardOptions
+{
+    Authorization = [new HangfireDashboardAuthorizationFilter(app.Configuration)]
+});
 app.MapControllers();
 app.MapHub<ProgressHub>("/hubs/progress");
 
@@ -85,9 +116,10 @@ using (var scope = app.Services.CreateScope())
 
     foreach (var schedule in recurringSchedules.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.Id) && !string.IsNullOrWhiteSpace(x.Cron)))
     {
+        var captured = schedule;
         recurringManager.AddOrUpdate<ScheduledBulkPublishingJob>(
             schedule.Id,
-            job => job.ExecuteAsync(),
+            job => job.ExecuteAsync(captured),
             schedule.Cron,
             new RecurringJobOptions
             {

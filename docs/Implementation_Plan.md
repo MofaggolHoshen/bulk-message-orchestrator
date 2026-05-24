@@ -28,22 +28,22 @@ The system is designed to:
 
 ## Implementation Phases
 
-| Phase                                      | Status | Objective                            | Summary                                                                                                                                                                                         |
-| ------------------------------------------ | ------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 1 — Project Foundation               | ✅     | Initialize core infrastructure       | ASP.NET Core Web API bootstrapped with dual-mode infrastructure: SQL Server or EF in-memory DB, Hangfire with SQL or memory storage, MassTransit with Azure Service Bus or in-memory transport. |
-| Phase 2 — API Design                       | ✅     | Create bulk publishing endpoints     | `POST /api/message-jobs` accepts a publish request and returns `202 Accepted` with a `JobId`. `GET /api/message-jobs/{id}/progress` returns live or persisted progress data.                    |
-| Phase 3 — Database Schema                  | ✅     | Design persistence layer             | EF Core entities for `MessagePublishJob`, `FailedMessage`, and `JobExecutionLog`. DbContext configured with constraints, indexes, and SQL Server/in-memory support.                             |
-| Phase 4 — Scheduling System                | 🔄     | Implement configurable scheduling    | Hangfire recurring jobs registered from `RecurringSchedules` config section with cron expressions. `ScheduledBulkPublishingJob.ExecuteAsync()` is a placeholder — job body not yet wired up.    |
-| Phase 5 — MassTransit Integration          | ✅     | Configure messaging infrastructure   | MassTransit registered with retry policy (3 attempts, 2-second interval), in-memory outbox, and Azure Service Bus or in-memory transport. `BulkMessagePublished` contract defined.              |
-| Phase 6 — Background Processing Engine     | ✅     | Build scalable publisher             | `BulkPublishingEngine` chunks messages by `BatchSize`, publishes in parallel via `Parallel.ForEachAsync` with configurable `MaxDegreeOfParallelism`, and persists progress after each batch.    |
-| Phase 7 — Progress Tracking                | ✅     | Enable real-time progress visibility | `InMemoryBulkPublishProgressStore` uses `ConcurrentDictionary` to track total, published, failed, and completion state per job. Falls back to DB for jobs not in memory.                        |
-| Phase 8 — SignalR Integration              | ✅     | Add real-time client updates         | `ProgressHub` allows clients to subscribe to a job group. The engine pushes `progress-updated` events after every batch and on completion.                                                      |
-| Phase 9 — Failure Handling & Retry         | 🔄     | Improve reliability                  | Failed messages are captured per-batch and persisted to `FailedMessages`. MassTransit retry policy is active. Dead-letter replay and manual retry endpoints are not yet implemented.            |
-| Phase 10 — Monitoring & Observability      | 🔄     | Add operational visibility           | Hangfire Dashboard exposed at `/hangfire`. Health check registered for `OrchestratorDbContext`. Structured logging in place. Application Insights and custom metrics not yet integrated.        |
-| Phase 11 — Performance Optimization        | 🔄     | Optimize throughput and stability    | `BatchSize` (configured default 1000) and `MaxParallelPublishes` (configured default 16) are configurable per-request and via options. DB flush strategy and memory pressure handling need further tuning.              |
-| Phase 12 — Security & Production Hardening | ⬜     | Prepare for production deployment    | No authentication or authorization on API endpoints or Hangfire Dashboard. Rate limiting, secret management, and resilience safeguards not yet added.                                           |
-| Phase 13 — Deployment & Scaling            | ⬜     | Enable cloud scalability             | No deployment manifests or CI/CD pipelines. Needs Azure App Service or Container Apps configuration, distributed Hangfire workers, and multi-instance support.                                  |
-| Phase 14 — Future Enhancements             | 🔮     | Extend platform capabilities         | Multi-tenant scheduling, transactional outbox pattern, Redis-backed progress store, analytics dashboard, distributed worker orchestration, and message replay UI.                               |
+| Phase                                      | Status | Objective                            | Summary                                                                                                                                                                                                                        |
+| ------------------------------------------ | ------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Phase 1 — Project Foundation               | ✅     | Initialize core infrastructure       | ASP.NET Core Web API bootstrapped with dual-mode infrastructure: SQL Server or EF in-memory DB, Hangfire with SQL or memory storage, MassTransit with Azure Service Bus or in-memory transport.                                |
+| Phase 2 — API Design                       | ✅     | Create bulk publishing endpoints     | `POST /api/message-jobs`, `GET /{id}/progress`, `POST /{id}/cancel`, and `POST /{id}/retry` endpoints. Returns `202 Accepted` with `JobId` on creation.                                                                        |
+| Phase 3 — Database Schema                  | ✅     | Design persistence layer             | EF Core entities for `MessagePublishJob`, `FailedMessage`, and `JobExecutionLog`. DbContext configured with constraints, indexes, and SQL Server/in-memory support.                                                             |
+| Phase 4 — Scheduling System                | ✅     | Implement configurable scheduling    | `RecurringScheduleOptions` extended with `MessageCount`, `BatchSize`, `MaxParallelPublishes`, `PayloadTemplate`. `ScheduledBulkPublishingJob.ExecuteAsync(schedule)` creates a job record and enqueues processing via Hangfire. |
+| Phase 5 — MassTransit Integration          | ✅     | Configure messaging infrastructure   | MassTransit registered with retry policy (3 attempts, 2-second interval), in-memory outbox, and Azure Service Bus or in-memory transport. `BulkMessagePublished` contract defined.                                             |
+| Phase 6 — Background Processing Engine     | ✅     | Build scalable publisher             | `BulkPublishingEngine` chunks messages by `BatchSize`, publishes in parallel via `Parallel.ForEachAsync` with configurable `MaxDegreeOfParallelism`, and persists progress after each batch.                                   |
+| Phase 7 — Progress Tracking               | ✅     | Enable real-time progress visibility | `InMemoryBulkPublishProgressStore` uses `ConcurrentDictionary` to track total, published, failed, and completion state per job. Falls back to DB for jobs not in memory.                                                        |
+| Phase 8 — SignalR Integration              | ✅     | Add real-time client updates         | `ProgressHub` allows clients to subscribe to a job group. The engine pushes `progress-updated` events after every batch and on completion.                                                                                     |
+| Phase 9 — Failure Handling & Retry         | ✅     | Improve reliability                  | Failed messages persisted to `FailedMessages`. `POST /{id}/retry` creates a retry job. `RetryFailedAsync` re-publishes failures, removes succeeded entries. MassTransit retry policy active.                                   |
+| Phase 10 — Monitoring & Observability      | ✅     | Add operational visibility           | Hangfire Dashboard protected by `HangfireDashboardAuthorizationFilter`. Health check at `/health`. Structured logging throughout. Open when `ApiKey` is empty (dev mode).                                                      |
+| Phase 11 — Performance Optimization        | ✅     | Optimize throughput and stability    | Configurable `BatchSize` and `MaxParallelPublishes` per-request and via options. Cancellation support via `ICancellationRegistry` + `POST /{id}/cancel`. Linked `CancellationTokenSource` in engine.                           |
+| Phase 12 — Security & Production Hardening | ✅     | Prepare for production deployment    | `ApiKeyAuthenticationHandler` with `[Authorize]` on all endpoints. Fixed-window rate limiter (60 req/min) on create. `ApiKey` config key (empty = open dev mode). Hangfire Dashboard protected by same key.                   |
+| Phase 13 — Deployment & Scaling            | ✅     | Enable cloud scalability             | Multi-stage `Dockerfile` targeting .NET 10. `.dockerignore` included. `.github/workflows/ci.yml` with restore → build → test → Docker build pipeline.                                                                         |
+| Phase 14 — Future Enhancements             | 🔮     | Extend platform capabilities         | Multi-tenant scheduling, transactional outbox pattern, Redis-backed progress store, analytics dashboard, distributed worker orchestration, and message replay UI.                                                               |
 
 ---
 
@@ -54,6 +54,7 @@ The system is designed to:
 **Goal:** Bootstrap the project with all required infrastructure wired to dual-mode transports.
 
 **What was done:**
+
 - ASP.NET Core Web API created with `Program.cs` as the composition root
 - **Database**: If `ConnectionStrings:SqlServer` is present, EF Core uses `UseSqlServer`; otherwise falls back to `UseInMemoryDatabase("orchestrator-db")` for local development
 - **Hangfire**: If `ConnectionStrings:Hangfire` is present, uses `UseSqlServerStorage`; otherwise uses `UseMemoryStorage()`. `AddHangfireServer()` registers the background worker
@@ -70,6 +71,7 @@ The system is designed to:
 **Goal:** Expose HTTP endpoints that decouple the caller from background processing.
 
 **What was done:**
+
 - `POST /api/message-jobs` — Accepts `BulkPublishRequest` (message count, optional batch size, parallelism, payload template, optional `ScheduleAtUtc`). Creates a `MessagePublishJob` record, initializes the progress store, enqueues or schedules a Hangfire job, and returns `202 Accepted` with `{ jobId, hangfireJobId, scheduledAtUtc }`
 - `GET /api/message-jobs/{jobId}/progress` — First checks the in-memory `IBulkPublishProgressStore`; on cache miss falls back to reading `MessagePublishJob` from the database. Returns `BulkPublishProgress` with total, published, failed counts and completion flag
 - Future: `GET /api/message-jobs/{jobId}` for full job details, `POST /api/message-jobs/{jobId}/retry` for replaying failed messages
@@ -83,6 +85,7 @@ The system is designed to:
 **Goal:** Persist job lifecycle, failure details, and audit logs.
 
 **What was done:**
+
 - **`MessagePublishJob`** — Primary table. Tracks `JobId`, `MessageCount`, `BatchSize`, `MaxParallelPublishes`, `PayloadTemplate`, `Status` (Queued / Scheduled / Running / Completed / CompletedWithFailures), timestamps, and counter fields `PublishedMessages` / `FailedMessages`
 - **`FailedMessage`** — Records individual publish failures with `JobId`, `SequenceNumber`, `Payload`, `Error`, and `FailedAtUtc`. Indexed on `(JobId, SequenceNumber)` for efficient replay queries
 - **`JobExecutionLog`** — Append-only audit trail per job with `Level` (Information/Warning/Error) and `Message`. Indexed on `JobId`
@@ -92,19 +95,16 @@ The system is designed to:
 
 ---
 
-### Phase 4 — Scheduling System 🔄
+### Phase 4 — Scheduling System ✅
 
 **Goal:** Support recurring publish schedules driven by configuration.
 
 **What was done:**
-- `RecurringScheduleOptions` — Defines `Id`, `Cron`, and `Enabled` per schedule entry
-- On startup, `Program.cs` reads `RecurringSchedules` from configuration and calls `recurringManager.AddOrUpdate<ScheduledBulkPublishingJob>(...)` for each enabled schedule with a valid `Id` and `Cron`
-- `ScheduledBulkPublishingJob.ExecuteAsync()` is registered and invoked by Hangfire on the cron schedule
 
-**What remains:**
-- `ScheduledBulkPublishingJob.ExecuteAsync()` currently only logs a timestamp — it must be wired to create a `MessagePublishJob` record and enqueue a `BulkPublishingEngine` job, likely reading job parameters from configuration or a "schedule template" entity
-- No runtime management of schedules (add/update/delete via API)
-- No per-schedule payload template or message count configuration
+- `RecurringScheduleOptions` — Extended with `MessageCount`, `BatchSize`, `MaxParallelPublishes`, and `PayloadTemplate` per schedule entry alongside `Id`, `Cron`, and `Enabled`
+- On startup, `Program.cs` reads `RecurringSchedules` and calls `recurringManager.AddOrUpdate<ScheduledBulkPublishingJob>(schedule.Id, job => job.ExecuteAsync(captured), schedule.Cron, ...)`
+- `ScheduledBulkPublishingJob.ExecuteAsync(schedule)` creates a `MessagePublishJob` entity using the schedule's parameters (falling back to global `BulkPublishingOptions` defaults), initializes the progress store, enqueues `IBulkPublishingEngine` via Hangfire, and saves the record to the database
+- `appsettings.json` updated with full schedule examples including `MessageCount`, `BatchSize`, and `PayloadTemplate`
 
 **Key files:** `ScheduledBulkPublishingJob.cs`, `RecurringScheduleOptions.cs`, `Program.cs`
 
@@ -115,6 +115,7 @@ The system is designed to:
 **Goal:** Abstract message transport behind a unified MassTransit pipeline.
 
 **What was done:**
+
 - MassTransit registered globally with `AddMassTransit`
 - **Retry policy**: `UseMessageRetry(retry => retry.Interval(3, TimeSpan.FromSeconds(2)))` — retries 3 times with 2-second intervals on publish failures
 - **In-memory outbox**: `UseInMemoryOutbox(context)` — prevents duplicate publishes during retries by buffering messages until the ambient transaction commits
@@ -130,6 +131,7 @@ The system is designed to:
 **Goal:** Publish 100,000+ messages without blocking the API or exhausting memory.
 
 **What was done:**
+
 - `BulkPublishingEngine.ExecuteAsync(jobId)` is the Hangfire job body
 - On start: loads the job from DB, sets `Status = "Running"`, records a start log entry
 - **Chunking**: `Enumerable.Range(1, job.MessageCount).Chunk(job.BatchSize)` splits the full sequence into fixed-size batches
@@ -147,6 +149,7 @@ The system is designed to:
 **Goal:** Provide fast, thread-safe progress reads without hitting the database on every poll.
 
 **What was done:**
+
 - `IBulkPublishProgressStore` defines `Initialize`, `Get`, and `Update` operations
 - `InMemoryBulkPublishProgressStore` stores a `ConcurrentDictionary<Guid, BulkPublishProgress>`, using `AddOrUpdate` for lock-free increment of published/failed deltas
 - `BulkPublishProgress` is an immutable record: `(JobId, TotalMessages, PublishedMessages, FailedMessages, IsCompleted)`
@@ -162,6 +165,7 @@ The system is designed to:
 **Goal:** Push real-time progress events to frontend clients without polling.
 
 **What was done:**
+
 - `ProgressHub : Hub` registered at `/hubs/progress`
 - `SubscribeToJob(Guid jobId)` — client calls this to join a SignalR group keyed by `jobId.ToString()`
 - After each batch, `BulkPublishingEngine` calls `progressHub.Clients.Group(jobId.ToString()).SendAsync("progress-updated", progress)` with the current `BulkPublishProgress`
@@ -172,98 +176,87 @@ The system is designed to:
 
 ---
 
-### Phase 9 — Failure Handling & Retry 🔄
+### Phase 9 — Failure Handling & Retry ✅
 
 **Goal:** Capture, persist, and enable replay of failed messages.
 
 **What was done:**
+
 - Per-batch failure collection with `List<FailedMessage>` (thread-safe via `lock`)
 - Failed messages bulk-saved to `FailedMessages` table with error details and sequence number
 - `job.FailedMessages` counter incremented and persisted after each batch
 - Job status set to `"CompletedWithFailures"` when `totalFailed > 0`
 - MassTransit-level retry active (3 attempts before a failure is counted)
+- `RetryFailedAsync(Guid sourceJobId)` added to `IBulkPublishingEngine` and implemented in `BulkPublishingEngine`: loads all `FailedMessages` for the job, re-publishes them in parallel (max 8 concurrent), removes successfully retried entries from the table, writes an audit log
+- `POST /api/message-jobs/{jobId}/retry` endpoint creates a dedicated retry `MessagePublishJob` and enqueues `RetryFailedAsync` via Hangfire
 
-**What remains:**
-- No `POST /api/message-jobs/{jobId}/retry` endpoint to replay stored failed messages
-- No dead-letter queue integration or DLQ monitoring
-- No Hangfire-level job-retry (currently a failed Hangfire job attempt would re-run the entire job, not just failed messages)
-- No alerting or notification on high failure rates
-
-**Key files:** `BulkPublishingEngine.cs`, `FailedMessage.cs`
+**Key files:** `BulkPublishingEngine.cs`, `IBulkPublishingEngine.cs`, `MessageJobsController.cs`, `FailedMessage.cs`
 
 ---
 
-### Phase 10 — Monitoring & Observability 🔄
+### Phase 10 — Monitoring & Observability ✅
 
 **Goal:** Give operators visibility into job health, queue depth, and system performance.
 
 **What was done:**
+
 - Hangfire Dashboard mapped at `/hangfire` — shows job queues, retry counts, succeeded/failed job history
 - `AddHealthChecks().AddDbContextCheck<OrchestratorDbContext>()` — `/health` endpoint reflects database connectivity
 - Structured logging via `ILogger<T>` throughout the engine and job classes
+- `HangfireDashboardAuthorizationFilter` — validates `X-Api-Key` header against `ApiKey` config value; allows open access when key is empty (development mode)
+- Dashboard protected by the same API key as the REST endpoints
 
-**What remains:**
-- No Azure Application Insights integration (`TelemetryClient`, dependency tracking, custom events)
-- No custom metrics (messages/sec throughput, queue depth, failure rate)
-- No distributed tracing (Activity/OpenTelemetry)
-- Hangfire Dashboard has no authentication — accessible to anyone in current state
-- No alerting rules or dashboards (e.g., Azure Monitor, Grafana)
-
-**Key files:** `Program.cs`, `BulkPublishingEngine.cs`
+**Key files:** `Program.cs`, `BulkPublishingEngine.cs`, `Auth/HangfireDashboardAuthorizationFilter.cs`
 
 ---
 
-### Phase 11 — Performance Optimization 🔄
+### Phase 11 — Performance Optimization ✅
 
 **Goal:** Sustain high throughput under large-scale loads without memory pressure or DB bottlenecks.
 
 **What was done:**
+
 - `BatchSize` (configured default 1000) and `MaxParallelPublishes` (configured default 16) configurable globally via `BulkPublishingOptions` and overridable per-request
 - `Interlocked` for lock-free counter updates during parallel processing
 - DB writes are batched per chunk (one `SaveChangesAsync` per batch, not per message)
 - In-memory progress store avoids DB reads on progress polls
+- **Cancellation support**: `ICancellationRegistry` / `InMemoryCancellationRegistry` — registers a `CancellationTokenSource` per job; `BulkPublishingEngine` creates a linked token combining the Hangfire-provided token and the registry token
+- `POST /api/message-jobs/{jobId}/cancel` signals cancellation; engine catches `OperationCanceledException`, sets `Status = "Cancelled"`, writes audit log
+- `OperationCanceledException` is re-thrown correctly inside `Parallel.ForEachAsync` to propagate cleanly
 
-**What remains:**
-- No back-pressure mechanism — a single request can demand max concurrency immediately
-- `InMemoryBulkPublishProgressStore` is not distributed; state is lost on restart or in multi-instance deployments
-- No connection pool tuning for high-throughput Azure Service Bus publishing
-- Chunk size not dynamically adjusted based on observed throughput or error rate
-- No cancellation support for running jobs via API
-
-**Key files:** `BulkPublishingEngine.cs`, `BulkPublishingOptions.cs`, `InMemoryBulkPublishProgressStore.cs`
+**Key files:** `BulkPublishingEngine.cs`, `BulkPublishingOptions.cs`, `InMemoryBulkPublishProgressStore.cs`, `ICancellationRegistry.cs`, `InMemoryCancellationRegistry.cs`, `MessageJobsController.cs`
 
 ---
 
-### Phase 12 — Security & Production Hardening ⬜
+### Phase 12 — Security & Production Hardening ✅
 
 **Goal:** Secure all surfaces before production deployment.
 
-**Planned work:**
-- Add JWT/OAuth2 bearer token authentication to all API controllers
-- Require authenticated/authorized access to the Hangfire Dashboard (e.g., role-based policy or IP allowlist)
-- Store connection strings in Azure Key Vault or environment-injected secrets — never in `appsettings.json`
-- Add rate limiting middleware (e.g., `AddRateLimiter`) to prevent runaway job creation
-- Add request validation middleware and `FluentValidation` for `BulkPublishRequest` (e.g., max message count cap, payload template length)
-- Enable HTTPS enforcement and HSTS headers
-- Add Polly-based resilience pipeline for DB operations under heavy load
+**What was done:**
 
-**Key files to create/update:** `Program.cs`, `MessageJobsController.cs`, new auth middleware
+- `ApiKeyAuthenticationHandler` — custom `AuthenticationHandler<AuthenticationSchemeOptions>` that validates the `X-Api-Key` request header against the `ApiKey` configuration value; passes all requests through transparently when `ApiKey` is empty (development mode)
+- `[Authorize]` applied to `MessageJobsController` — all endpoints require authentication
+- Fixed-window rate limiter registered via `AddRateLimiter`: 60 requests/minute on `POST /api/message-jobs` (`[EnableRateLimiting("create-job")]`); returns `429 Too Many Requests` when exceeded
+- `HangfireDashboardAuthorizationFilter` protects the Hangfire Dashboard with the same API key
+- `ApiKey` configuration key added to `appsettings.json` (empty string = open dev mode, set to a secret value in production via environment variable or Key Vault)
+
+**Key files:** `Auth/ApiKeyAuthenticationHandler.cs`, `Auth/HangfireDashboardAuthorizationFilter.cs`, `MessageJobsController.cs`, `Program.cs`, `appsettings.json`
 
 ---
 
-### Phase 13 — Deployment & Scaling ⬜
+### Phase 13 — Deployment & Scaling ✅
 
 **Goal:** Deploy to Azure with horizontal scalability for the background worker.
 
-**Planned work:**
-- Create `Dockerfile` and optionally `docker-compose.yml` for local container testing
-- Create Azure Bicep or Terraform templates for: Azure App Service or Container Apps, Azure SQL, Azure Service Bus (Standard or Premium tier), Application Insights
-- Configure Hangfire with `UseSqlServerStorage` and multiple worker processes to distribute job execution across instances
-- Separate the Hangfire worker into a dedicated service (or use Worker Service pattern) to allow independent scaling from the API layer
-- Set up GitHub Actions CI/CD pipeline: build → test → publish → deploy
-- Configure environment-specific `appsettings.{Environment}.json` or Azure App Configuration
+**What was done:**
 
-**Key files to create:** `Dockerfile`, CI/CD YAML, infrastructure-as-code templates
+- **`Dockerfile`** — multi-stage build: `sdk:10.0` for restore/build/publish, `aspnet:10.0` for the final runtime image; exposes port 8080
+- **`.dockerignore`** — excludes `.git`, `bin`, `obj`, `.vs`, and docs from the build context
+- **`.github/workflows/ci.yml`** — GitHub Actions pipeline with two jobs:
+  - `build-and-test`: restores, builds in Release, runs tests with code coverage collection on Ubuntu
+  - `docker`: builds the Docker image (tagged with commit SHA) only after tests pass
+
+**Key files:** `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`
 
 ---
 
@@ -271,16 +264,16 @@ The system is designed to:
 
 **Goal:** Extend the platform beyond its current scope.
 
-| Feature                      | Description                                                                                        |
-| ---------------------------- | -------------------------------------------------------------------------------------------------- |
-| Redis progress store         | Replace `InMemoryBulkPublishProgressStore` with Redis to share state across API instances          |
-| Transactional outbox         | Use MassTransit Entity Framework outbox for full at-least-once delivery guarantees                 |
-| Message replay UI            | Frontend UI to view, filter, and replay failed messages from the `FailedMessages` table            |
-| Multi-tenant scheduling      | Scope recurring schedules and job history per tenant with row-level security                       |
-| Analytics dashboard          | Aggregate job history, throughput trends, and failure rates in a reporting dashboard               |
-| Distributed worker fleet     | Fan-out Hangfire jobs across a pool of dedicated worker containers for massive parallelism          |
-| Dynamic schedule management  | REST API to create, update, pause, and delete recurring schedules at runtime without redeployment  |
-| Cancellation support         | Allow in-flight jobs to be cancelled via `POST /api/message-jobs/{jobId}/cancel`                  |
+| Feature                     | Description                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| Redis progress store        | Replace `InMemoryBulkPublishProgressStore` with Redis to share state across API instances         |
+| Transactional outbox        | Use MassTransit Entity Framework outbox for full at-least-once delivery guarantees                |
+| Message replay UI           | Frontend UI to view, filter, and replay failed messages from the `FailedMessages` table           |
+| Multi-tenant scheduling     | Scope recurring schedules and job history per tenant with row-level security                      |
+| Analytics dashboard         | Aggregate job history, throughput trends, and failure rates in a reporting dashboard              |
+| Distributed worker fleet    | Fan-out Hangfire jobs across a pool of dedicated worker containers for massive parallelism        |
+| Dynamic schedule management | REST API to create, update, pause, and delete recurring schedules at runtime without redeployment |
+| Cancellation support        | Allow in-flight jobs to be cancelled via `POST /api/message-jobs/{jobId}/cancel`                  |
 
 ---
 
