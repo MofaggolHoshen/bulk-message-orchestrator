@@ -1,11 +1,9 @@
-using BulkMessage.Orchestrator.WithHangfire.Api.Auth;
-using BulkMessage.Orchestrator.WithHangfire.Api.Data;
-using BulkMessage.Orchestrator.WithHangfire.Api.Hubs;
-using BulkMessage.Orchestrator.WithHangfire.Api.Jobs;
-using BulkMessage.Orchestrator.WithHangfire.Api.Options;
-using BulkMessage.Orchestrator.WithHangfire.Api.Services;
-using Hangfire;
-using Hangfire.MemoryStorage;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Auth;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Data;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Hubs;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Jobs;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Options;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Services;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
@@ -26,20 +24,6 @@ else
 {
     builder.Services.AddDbContext<OrchestratorDbContext>(options => options.UseSqlServer(sqlConnection));
 }
-
-builder.Services.AddHangfire(configuration =>
-{
-    var hangfireConnection = builder.Configuration.GetConnectionString("Hangfire");
-    if (string.IsNullOrWhiteSpace(hangfireConnection))
-    {
-        configuration.UseMemoryStorage();
-    }
-    else
-    {
-        configuration.UseSqlServerStorage(hangfireConnection);
-    }
-});
-builder.Services.AddHangfireServer();
 
 builder.Services.AddMassTransit(bus =>
 {
@@ -90,7 +74,9 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<IBulkPublishProgressStore, InMemoryBulkPublishProgressStore>();
 builder.Services.AddSingleton<ICancellationRegistry, InMemoryCancellationRegistry>();
 builder.Services.AddScoped<IBulkPublishingEngine, BulkPublishingEngine>();
-builder.Services.AddScoped<ScheduledBulkPublishingJob>();
+builder.Services.AddScoped<BulkPublishJobHandler>();
+builder.Services.AddScoped<RetryFailedJobHandler>();
+builder.Services.AddHostedService<ScheduledBulkPublishingService>();
 
 var app = builder.Build();
 
@@ -103,30 +89,8 @@ app.MapHealthChecks("/health");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-app.UseHangfireDashboard("/hangfire", new Hangfire.DashboardOptions
-{
-    Authorization = [new HangfireDashboardAuthorizationFilter(app.Configuration)]
-});
 app.MapControllers();
 app.MapHub<ProgressHub>("/hubs/progress");
-
-using (var scope = app.Services.CreateScope())
-{
-    var recurringManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-
-    foreach (var schedule in recurringSchedules.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.Id) && !string.IsNullOrWhiteSpace(x.Cron)))
-    {
-        var captured = schedule;
-        recurringManager.AddOrUpdate<ScheduledBulkPublishingJob>(
-            schedule.Id,
-            job => job.ExecuteAsync(captured),
-            schedule.Cron,
-            new RecurringJobOptions
-            {
-                TimeZone = TimeZoneInfo.Utc
-            });
-    }
-}
 
 app.Run();
 

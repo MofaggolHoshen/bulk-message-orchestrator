@@ -1,4 +1,4 @@
-using BulkMessage.Orchestrator.Api.Services;
+using BulkMessage.Orchestrator.WithHangfire.Api.Services;
 using FluentAssertions;
 
 namespace BulkMessage.Orchestrator.WithHangfire.Api.Tests;

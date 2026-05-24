@@ -1,5 +1,5 @@
-using BulkMessage.Orchestrator.Api.Entities;
 using BulkMessage.Orchestrator.WithHangfire.Api.Data;
+using BulkMessage.Orchestrator.WithHangfire.Api.Entities;
 using BulkMessage.Orchestrator.WithHangfire.Api.Options;
 using BulkMessage.Orchestrator.WithHangfire.Api.Services;
 using Hangfire;
