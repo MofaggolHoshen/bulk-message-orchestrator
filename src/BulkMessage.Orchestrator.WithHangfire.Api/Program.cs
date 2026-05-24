@@ -103,7 +103,7 @@ app.MapHealthChecks("/health");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-app.UseHangfireDashboard("/hangfire", new Hangfire.DashboardOptions
+app.UseHangfireDashboard("/dashboard", new Hangfire.DashboardOptions
 {
     Authorization = [new HangfireDashboardAuthorizationFilter(app.Configuration)]
 });

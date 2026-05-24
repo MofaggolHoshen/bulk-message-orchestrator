@@ -9,6 +9,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
+using TickerQ.Dashboard.DependencyInjection;
+using TickerQ.DependencyInjection;
+using TickerQ.EntityFrameworkCore.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +27,13 @@ else
 {
     builder.Services.AddDbContext<OrchestratorDbContext>(options => options.UseSqlServer(sqlConnection));
 }
+
+// TickerQ setup with EF Core operational store
+builder.Services.AddTickerQ(options =>
+{
+    options.AddOperationalStore<OrchestratorDbContext>();
+    options.AddDashboard("/dashboard");
+});
 
 builder.Services.AddMassTransit(bus =>
 {
@@ -79,6 +89,19 @@ builder.Services.AddScoped<RetryFailedJobHandler>();
 builder.Services.AddHostedService<ScheduledBulkPublishingService>();
 
 var app = builder.Build();
+
+// Activate TickerQ job processor (this initializes the schema)
+app.UseTickerQ();
+
+// Then ensure migrations for orchestrator context (relational databases only)
+if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("SqlServer")))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<OrchestratorDbContext>();
+        await db.Database.MigrateAsync();
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {
