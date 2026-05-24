@@ -3,9 +3,9 @@
     <File Path="docs/Implementation_Plan.md" />
   </Folder>
   <Folder Name="/src/">
-    <Project Path="src/BulkMessage.Orchestrator.Api/BulkMessage.Orchestrator.Api.csproj" />
+    <Project Path="src/BulkMessage.Orchestrator.WithHangfire.Api/BulkMessage.Orchestrator.WithHangfire.Api.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/BulkMessage.Orchestrator.Api.Tests/BulkMessage.Orchestrator.Api.Tests.csproj" />
+    <Project Path="tests/BulkMessage.Orchestrator.WithHangfire.Api.Tests/BulkMessage.Orchestrator.WithHangfire.Api.Tests.csproj" />
   </Folder>
 </Solution>
