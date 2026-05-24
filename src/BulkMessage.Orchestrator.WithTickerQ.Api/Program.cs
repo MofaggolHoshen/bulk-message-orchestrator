@@ -1,16 +1,17 @@
-using BulkMessage.Orchestrator.WithHangfire.Api.Auth;
-using BulkMessage.Orchestrator.WithHangfire.Api.Data;
-using BulkMessage.Orchestrator.WithHangfire.Api.Hubs;
-using BulkMessage.Orchestrator.WithHangfire.Api.Jobs;
-using BulkMessage.Orchestrator.WithHangfire.Api.Options;
-using BulkMessage.Orchestrator.WithHangfire.Api.Services;
-using Hangfire;
-using Hangfire.MemoryStorage;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Auth;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Data;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Hubs;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Jobs;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Options;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Services;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.RateLimiting;
+using TickerQ.Dashboard.DependencyInjection;
+using TickerQ.DependencyInjection;
+using TickerQ.EntityFrameworkCore.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,19 +28,12 @@ else
     builder.Services.AddDbContext<OrchestratorDbContext>(options => options.UseSqlServer(sqlConnection));
 }
 
-builder.Services.AddHangfire(configuration =>
+// TickerQ setup with EF Core operational store
+builder.Services.AddTickerQ(options =>
 {
-    var hangfireConnection = builder.Configuration.GetConnectionString("Hangfire");
-    if (string.IsNullOrWhiteSpace(hangfireConnection))
-    {
-        configuration.UseMemoryStorage();
-    }
-    else
-    {
-        configuration.UseSqlServerStorage(hangfireConnection);
-    }
+    options.AddOperationalStore<OrchestratorDbContext>();
+    options.AddDashboard("/dashboard");
 });
-builder.Services.AddHangfireServer();
 
 builder.Services.AddMassTransit(bus =>
 {
@@ -90,9 +84,24 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<IBulkPublishProgressStore, InMemoryBulkPublishProgressStore>();
 builder.Services.AddSingleton<ICancellationRegistry, InMemoryCancellationRegistry>();
 builder.Services.AddScoped<IBulkPublishingEngine, BulkPublishingEngine>();
-builder.Services.AddScoped<ScheduledBulkPublishingJob>();
+builder.Services.AddScoped<BulkPublishJobHandler>();
+builder.Services.AddScoped<RetryFailedJobHandler>();
+builder.Services.AddHostedService<ScheduledBulkPublishingService>();
 
 var app = builder.Build();
+
+// Activate TickerQ job processor (this initializes the schema)
+app.UseTickerQ();
+
+// Then ensure migrations for orchestrator context (relational databases only)
+if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("SqlServer")))
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<OrchestratorDbContext>();
+        await db.Database.MigrateAsync();
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -103,30 +112,8 @@ app.MapHealthChecks("/health");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-app.UseHangfireDashboard("/dashboard", new Hangfire.DashboardOptions
-{
-    Authorization = [new HangfireDashboardAuthorizationFilter(app.Configuration)]
-});
 app.MapControllers();
 app.MapHub<ProgressHub>("/hubs/progress");
-
-using (var scope = app.Services.CreateScope())
-{
-    var recurringManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-
-    foreach (var schedule in recurringSchedules.Where(x => x.Enabled && !string.IsNullOrWhiteSpace(x.Id) && !string.IsNullOrWhiteSpace(x.Cron)))
-    {
-        var captured = schedule;
-        recurringManager.AddOrUpdate<ScheduledBulkPublishingJob>(
-            schedule.Id,
-            job => job.ExecuteAsync(captured),
-            schedule.Cron,
-            new RecurringJobOptions
-            {
-                TimeZone = TimeZoneInfo.Utc
-            });
-    }
-}
 
 app.Run();
 

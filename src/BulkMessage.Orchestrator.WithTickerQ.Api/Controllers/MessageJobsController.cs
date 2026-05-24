@@ -1,23 +1,22 @@
-using BulkMessage.Orchestrator.WithHangfire.Api.Data;
-using BulkMessage.Orchestrator.WithHangfire.Api.Entities;
-using BulkMessage.Orchestrator.WithHangfire.Api.Models;
-using BulkMessage.Orchestrator.WithHangfire.Api.Options;
-using BulkMessage.Orchestrator.WithHangfire.Api.Services;
-using Hangfire;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Data;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Entities;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Models;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Options;
+using BulkMessage.Orchestrator.WithTickerQ.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
-namespace BulkMessage.Orchestrator.WithHangfire.Api.Controllers;
+namespace BulkMessage.Orchestrator.WithTickerQ.Api.Controllers;
 
 [Authorize]
 [ApiController]
 [Route("api/message-jobs")]
 public sealed class MessageJobsController(
     OrchestratorDbContext dbContext,
-    IBackgroundJobClient backgroundJobClient,
+    IBulkPublishingEngine bulkPublishingEngine,
     IBulkPublishProgressStore progressStore,
     ICancellationRegistry cancellationRegistry,
     IOptions<BulkPublishingOptions> options) : ControllerBase
@@ -49,16 +48,24 @@ public sealed class MessageJobsController(
         await dbContext.MessagePublishJobs.AddAsync(job, cancellationToken);
         progressStore.Initialize(jobId, request.MessageCount);
 
-        job.HangfireJobId = scheduledAt is not null && scheduledAt > DateTimeOffset.UtcNow
-            ? backgroundJobClient.Schedule<IBulkPublishingEngine>(
-                engine => engine.ExecuteAsync(jobId, CancellationToken.None),
-                scheduledAt.Value - DateTimeOffset.UtcNow)
-            : backgroundJobClient.Enqueue<IBulkPublishingEngine>(
-                engine => engine.ExecuteAsync(jobId, CancellationToken.None));
+        var tickerQJobId = jobId.ToString();
+        job.TickerQJobId = tickerQJobId;
+
+        if (scheduledAt is not null && scheduledAt > DateTimeOffset.UtcNow)
+        {
+            // Schedule for later execution
+            // TODO: Integrate with TickerQ scheduler
+        }
+        else
+        {
+            // Enqueue for immediate execution
+            // TODO: Integrate with TickerQ
+            _ = bulkPublishingEngine.ExecuteAsync(jobId, cancellationToken);
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Accepted(new BulkPublishResponse(jobId, job.HangfireJobId, scheduledAt));
+        return Accepted(new BulkPublishResponse(jobId, tickerQJobId, scheduledAt));
     }
 
     [HttpGet("{jobId:guid}/progress")]
@@ -114,6 +121,7 @@ public sealed class MessageJobsController(
         }
 
         var retryJobId = Guid.NewGuid();
+        var retryTickerQJobId = retryJobId.ToString();
         var retryJob = new MessagePublishJob
         {
             JobId = retryJobId,
@@ -122,17 +130,18 @@ public sealed class MessageJobsController(
             MaxParallelPublishes = job.MaxParallelPublishes,
             PayloadTemplate = job.PayloadTemplate,
             Status = "Queued",
-            CreatedAtUtc = DateTimeOffset.UtcNow
+            CreatedAtUtc = DateTimeOffset.UtcNow,
+            TickerQJobId = retryTickerQJobId
         };
 
         await dbContext.MessagePublishJobs.AddAsync(retryJob, cancellationToken);
         progressStore.Initialize(retryJobId, failedCount);
 
-        retryJob.HangfireJobId = backgroundJobClient.Enqueue<IBulkPublishingEngine>(
-            engine => engine.RetryFailedAsync(jobId, CancellationToken.None));
+        // TODO: Integrate with TickerQ to enqueue retry job
+        _ = bulkPublishingEngine.RetryFailedAsync(jobId, cancellationToken);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Accepted(new BulkPublishResponse(retryJobId, retryJob.HangfireJobId, null));
+        return Accepted(new BulkPublishResponse(retryJobId, retryTickerQJobId, null));
     }
 }
