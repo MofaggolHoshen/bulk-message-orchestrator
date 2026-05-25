@@ -1,10 +1,10 @@
+using BulkMessage.Orchestrator.Api.Extensions;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Auth;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Data;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Hubs;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Jobs;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Options;
 using BulkMessage.Orchestrator.WithTickerQ.Api.Services;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -35,27 +35,7 @@ builder.Services.AddTickerQ(options =>
     options.AddDashboard("/dashboard");
 });
 
-builder.Services.AddMassTransit(bus =>
-{
-    var serviceBusConnection = builder.Configuration.GetConnectionString("AzureServiceBus");
-    if (string.IsNullOrWhiteSpace(serviceBusConnection))
-    {
-        bus.UsingInMemory((context, cfg) =>
-        {
-            cfg.UseMessageRetry(retry => retry.Interval(3, TimeSpan.FromSeconds(2)));
-            cfg.UseInMemoryOutbox(context);
-        });
-    }
-    else
-    {
-        bus.UsingAzureServiceBus((context, cfg) =>
-        {
-            cfg.Host(serviceBusConnection);
-            cfg.UseMessageRetry(retry => retry.Interval(3, TimeSpan.FromSeconds(2)));
-            cfg.UseInMemoryOutbox(context);
-        });
-    }
-});
+builder.Services.AddMassTransitConfiguration(builder.Configuration);
 
 // Authentication — API key scheme (open in dev when ApiKey config is empty)
 builder.Services

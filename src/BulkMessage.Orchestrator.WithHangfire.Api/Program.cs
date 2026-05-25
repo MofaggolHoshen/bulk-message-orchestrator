@@ -1,3 +1,4 @@
+using BulkMessage.Orchestrator.Api.Extensions;
 using BulkMessage.Orchestrator.WithHangfire.Api.Auth;
 using BulkMessage.Orchestrator.WithHangfire.Api.Data;
 using BulkMessage.Orchestrator.WithHangfire.Api.Hubs;
@@ -6,7 +7,6 @@ using BulkMessage.Orchestrator.WithHangfire.Api.Options;
 using BulkMessage.Orchestrator.WithHangfire.Api.Services;
 using Hangfire;
 using Hangfire.MemoryStorage;
-using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -41,27 +41,7 @@ builder.Services.AddHangfire(configuration =>
 });
 builder.Services.AddHangfireServer();
 
-builder.Services.AddMassTransit(bus =>
-{
-    var serviceBusConnection = builder.Configuration.GetConnectionString("AzureServiceBus");
-    if (string.IsNullOrWhiteSpace(serviceBusConnection))
-    {
-        bus.UsingInMemory((context, cfg) =>
-        {
-            cfg.UseMessageRetry(retry => retry.Interval(3, TimeSpan.FromSeconds(2)));
-            cfg.UseInMemoryOutbox(context);
-        });
-    }
-    else
-    {
-        bus.UsingAzureServiceBus((context, cfg) =>
-        {
-            cfg.Host(serviceBusConnection);
-            cfg.UseMessageRetry(retry => retry.Interval(3, TimeSpan.FromSeconds(2)));
-            cfg.UseInMemoryOutbox(context);
-        });
-    }
-});
+builder.Services.AddMassTransitConfiguration(builder.Configuration);
 
 // Authentication — API key scheme (open in dev when ApiKey config is empty)
 builder.Services
