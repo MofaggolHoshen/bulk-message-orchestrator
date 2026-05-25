@@ -14,8 +14,6 @@
     <PackageReference Include="TickerQ" Version="2.0.0" />
     <PackageReference Include="TickerQ.EntityFrameworkCore" Version="2.0.0" />
     <PackageReference Include="TickerQ.Dashboard" Version="2.0.0" />
-    <PackageReference Include="MassTransit" Version="8.2.3" />
-    <PackageReference Include="MassTransit.Azure.ServiceBus.Core" Version="8.2.3" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
